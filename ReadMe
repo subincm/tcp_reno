@@ -1,0 +1,101 @@
+Server Implementation Details
+=============================
+1. Packet Format: Header:16 bytes, Data:496 bytes : Total 512
+typedef struct packet {
+	unsigned int seq;
+	unsigned int ack;
+	unsigned int timestamp;
+	unsigned short window_size;
+	unsigned char flags;
+	unsigned char reserved;
+        char data[0];
+} packet_t;
+
+The 8 bit flags field details are as follows
+
+#define DATA_FLAG 	0x1     /* Packet Contains Data */
+#define ACK_FLAG 	0x2     /* Packet is an ACK */
+#define FILE_FLAG	0x4     /* Packet Contains File name */
+#define ERR_FLAG	0x8     /* File does not exist, misc. errs */
+#define EOF_FLAG	0x10    /* Packet containing the last file segment */
+#define PROBE_FLAG	0x20    /* Probe Packet */
+
+
+2. To get the list of interfaces present in the system, we utilized the Get_ifi_info_plus function from "get_ifi_info_plus.c" in ~cse533/Asgn2_code folder.
+Please find the code in ifi.c, an array of ifi_t pointers is maintained.
+
+3. If the file does not exist at the server, it will send a message with the ERR_FLAG set.
+
+4. Modified the RTT and RTO mechanisms as specified in the requirement.
+
+#define RTT_RXTMIN		1000 /* min retransmit timeout value, in milli seconds */ 
+#define RTT_RXTMAX		3000 /* max retransmit timeout value, in milli seconds */
+#define RTT_MAXNREXMT           12   /* max # times to retransmit */
+
+Basically converted everything to milliseconds.
+Also In function rtt_timeout, after doubling the RTO, passed its value through the function rtt_minmax.
+
+Details in rtt_mod.c and rtt_mod.h
+
+5. RTT is calculated by taking the difference of the current clock time and the timestamp in the ACK.
+    Note: The timestamp is just relayed back by the client.
+   RTO calculation is done as suggested in the Steven's UNP book.
+
+   Details in rtt_mod.c rtt_mod.h
+
+6. For the ARQ mechanism, we maintain a Circular Buffer, to which inflight data will be pushed. 
+They will be freed when the corresponding ACKs are received. Note that these can be Cumulative ACKs as well.
+
+7. Fast retransmit is also implemented when 3 duplicate ACKs are received.
+
+8. Congestion Control is also implemented as illustrated in <TCP/IP Illustrated: Volume 1> Chapter 21. 
+   TCP Reno is implemented with Slow Start and  Congestion Avoidance 
+   Details in congestion_ctrl.h and congestion_ctrl.c
+
+9. Persist Timer is implemented to make the client advertise its updated window and prevent window locking.
+
+10. The server also maintains a client list so that every distinct client is served by only a single child process.
+    The server frees the client record when the child process exits.
+
+Main Server is in dgserver.c
+
+Client Implementation Details
+=============================
+1. The client maintains a circular buffer into which the producer thread writes the data read from the socket.
+   The consumer thread wakes periodically, reads as much as it can(basically contingous writes) and prints in to the console and goes back to sleep.
+
+2. A pthread mutex lock protects the circular buffer from concurrent access.
+
+3. Rx and Tx drops are simulated using the Probability distribution as speecified in the configuration.
+
+4. Graceful Close is done, in which, the client after receiving the EOF packet, will hang around for 2*RTT servicing ACKs. This is to handle the case of server retransmission if the the ACK was lost.
+
+Main Client is in dgclient.c
+
+Main Datastructure:
+
+Circular Buffer: (buffer.*)
+===========================
+typedef struct circ_buf {
+	packet_info_t** slots;
+	int size;
+	unsigned int next_read_seq;
+        unsigned int next_contig_write_seq;
+} circ_buffer_t;
+
+Packet MetaData: (packet.*)
+============================
+typedef struct packet_info {
+	unsigned int seq;
+	unsigned int ack;
+	unsigned int timestamp;
+	unsigned short window_size;
+	unsigned char flags;
+	unsigned char reserved;
+	unsigned char* data;
+	unsigned int data_len;
+        int dup_count;
+        int dup_ack;
+        int retransmit;
+} packet_info_t;
+

@@ -1,0 +1,7 @@
+127.0.0.1
+10001       #Well-known port number of server.
+asgn2.html
+20          #Receiving sliding-window size
+450         #Random generator seed value.
+0.0         #Probability p of datagram loss.
+1000        #The mean µ, in milliseconds, for an exponential distribution 
